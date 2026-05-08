@@ -29,6 +29,7 @@ import json
 import openai
 from dotenv import load_dotenv
 from prompts import CALMNESS_SCORER_PROMPT
+from story_format import extract_story_text
 
 load_dotenv()
 
@@ -64,8 +65,10 @@ def score_calmness(
     if model is None:
         model = os.getenv("STORY_MODEL", "gpt-3.5-turbo")
 
+    story_text = extract_story_text(story)
+
     # Format the calmness prompt with the story
-    formatted_prompt = CALMNESS_SCORER_PROMPT.format(story=story)
+    formatted_prompt = CALMNESS_SCORER_PROMPT.format(story=story_text)
 
     # Call the scorer — very low temperature for consistent scoring
     response = client.chat.completions.create(
