@@ -35,7 +35,6 @@ Author: Mahima Advilkar
 import os
 from dotenv import load_dotenv
 import openai
-from telemetry import start_step
 
 from judge import evaluate_story, display_evaluation
 from story_generator import generate_story, generate_revised_story, display_story
@@ -52,10 +51,7 @@ def run_reflection_loop(
     initial_story: str,
     user_input: str,
     story_plan: dict,
-    verbose: bool = True,
-    run_id: str | None = None,
-    channel: str = "cli",
-    telemetry_events: list | None = None,
+    verbose: bool = True
 ) -> tuple[str, dict, int]:
     """
     Run the judge-evaluate-revise loop until PASS or max retries reached.
@@ -103,23 +99,7 @@ def run_reflection_loop(
             display_story(current_story, attempt=attempt)
 
         # Evaluate the current story with the judge
-        judge_timer = None
-        if run_id:
-            judge_timer = start_step(
-                run_id,
-                channel,
-                step_name=f"judge_attempt_{attempt}",
-                attempt=attempt,
-            )
         evaluation = evaluate_story(client=client, story=current_story)
-        if judge_timer:
-            event = judge_timer.finish(details={
-                "attempt": attempt,
-                "overall_score": evaluation.get("overall_score", 0.0),
-                "verdict": evaluation.get("verdict", "FAIL"),
-            })
-            if telemetry_events is not None:
-                telemetry_events.append(event)
 
         # Display judge evaluation results
         if verbose:
@@ -147,26 +127,11 @@ def run_reflection_loop(
                   f"Sending to revision agent... (attempt {attempt}/{MAX_RETRIES})")
 
             # Generate a revised story using judge feedback
-            revision_timer = None
-            if run_id:
-                revision_timer = start_step(
-                    run_id,
-                    channel,
-                    step_name=f"revision_attempt_{attempt}",
-                    attempt=attempt,
-                )
             current_story = generate_revised_story(
                 client=client,
                 original_story=current_story,
                 judge_feedback=evaluation
             )
-            if revision_timer:
-                event = revision_timer.finish(details={
-                    "attempt": attempt,
-                    "word_count_revised": len(current_story.split()),
-                })
-                if telemetry_events is not None:
-                    telemetry_events.append(event)
 
             attempt += 1
 
