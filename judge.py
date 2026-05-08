@@ -79,7 +79,49 @@ def evaluate_story(
     if model is None:
         model = os.getenv("JUDGE_MODEL", "gpt-3.5-turbo")
 
-    # Format the judge prompt with the story to evaluate
+    # ─── Step 1: Critique First ────────────────────────────────────────
+    # Force the model to find problems BEFORE scoring.
+    # This is a two-step evaluation pattern — asking the model to critique
+    # first prevents it from being agreeable and then justifying high scores.
+    # A model asked to "find flaws" will find them. A model asked to "score"
+    # will often inflate. We separate these two tasks deliberately.
+    critique_response = client.chat.completions.create(
+        model=model,
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "You are a critical editor for children's bedtime stories. "
+                    "Your job is to find problems — not celebrate successes. "
+                    "Be honest and specific."
+                )
+            },
+            {
+                "role": "user",
+                "content": (
+                    "Read this bedtime story for children ages 5-10 and list every problem you find.\n\n"
+                    "Look specifically for:\n"
+                    "- Any moment that might cause anxiety, fear, or worry in a child\n"
+                    "- Any conflict, tension, or argument between characters\n"
+                    "- Vocabulary a 5-year-old would not understand\n"
+                    "- The moral being stated directly instead of shown through action\n"
+                    "- The energy level at the END — is it calm or still active?\n"
+                    "- Direct address to the reader ('And so, dear child...')\n\n"
+                    "List every problem you find. Be specific — quote the sentence.\n"
+                    "If you find no problems, you are not looking hard enough.\n\n"
+                    f"Story:\n{story}"
+                )
+            }
+        ],
+        temperature=0.4,
+        max_tokens=400,
+    )
+
+    critique = critique_response.choices[0].message.content.strip()
+
+    # ─── Step 2: Score With Critique Context ──────────────────────────
+    # Now score the story — but with the critique already surfaced.
+    # This prevents the model from ignoring problems it has already named.
     formatted_prompt = JUDGE_PROMPT.format(story=story)
 
     # Call the judge — low temperature for consistent, reliable evaluation
@@ -89,18 +131,31 @@ def evaluate_story(
             {
                 "role": "system",
                 "content": (
-                    "You are a strict but fair quality evaluator for children's "
-                    "bedtime stories. You protect children by ensuring only emotionally "
-                    "safe, age-appropriate, and genuinely calming stories reach them. "
+                    "You are a strict quality evaluator for children's bedtime stories. "
+                    "You protect children by ensuring only emotionally safe, "
+                    "age-appropriate, and genuinely calming stories reach them. "
                     "Always return valid JSON only — no explanation, no markdown."
                 )
             },
             {
                 "role": "user",
                 "content": formatted_prompt
+            },
+            {
+                "role": "assistant",
+                "content": f"Before scoring, I note these problems I found in this story:\n{critique}"
+            },
+            {
+                "role": "user",
+                "content": (
+                    "Now score the story using the evaluation framework above. "
+                    "Your scores must reflect the problems you just identified. "
+                    "Do not give a high score to a dimension where you found a problem. "
+                    "Return ONLY the JSON object."
+                )
             }
         ],
-        temperature=0.2,    # Very low — evaluation must be consistent, not creative
+        temperature=0.2,
         max_tokens=500,
     )
 
@@ -168,7 +223,7 @@ def _validate_and_repair(evaluation: dict) -> dict:
     evaluation["overall_score"] = calculated_score
 
     # Apply PASS/FAIL threshold — always recalculate from actual score
-    evaluation["verdict"] = "PASS" if calculated_score >= 7.0 else "FAIL"
+    evaluation["verdict"] = "PASS" if calculated_score >= 7.5 else "FAIL"
 
     # Ensure feedback fields exist
     if "weaknesses" not in evaluation or not evaluation["weaknesses"]:

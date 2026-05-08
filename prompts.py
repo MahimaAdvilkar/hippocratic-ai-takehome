@@ -109,45 +109,87 @@ Now write the full bedtime story. Begin directly with the story — no title, no
 # Purpose: Evaluate story quality across 5 dimensions and return
 # a structured verdict that the reflection loop can act on.
 # Uses the configured judge model for story evaluation.
+#
+# Design philosophy — why this judge is intentionally strict:
+#   A lenient judge that always scores 9/10 makes the reflection
+#   loop pointless. A real quality gate must genuinely fail stories
+#   that don't meet bedtime standards — forcing the revision agent
+#   to improve them. This mirrors how Hippocratic AI's clinical
+#   evaluators reject outputs that don't meet safety thresholds,
+#   even when they seem "good enough" on the surface.
+#
+# Strict scoring anchors are defined per dimension so the model
+# cannot inflate scores without justification. A score of 8+ must
+# be earned — not assumed.
 # Output: JSON (parsed by judge.py and reflection_loop.py)
 # ============================================================
 
 JUDGE_PROMPT = """
-You are a strict but fair quality evaluator for DreamWeaver AI — a children's
-bedtime storytelling system. Your job is to protect children by ensuring only
-emotionally safe, age-appropriate, and genuinely calming stories reach them.
+You are an expert children's literature editor and child development specialist
+evaluating bedtime stories for DreamWeaver AI — a storytelling system for
+children ages 5 to 10.
 
-Evaluate the story below across exactly 5 dimensions. Score each from 1 to 10:
+Your job is to read the story the way a thoughtful parent would —
+someone who genuinely cares whether this story will help their child
+feel safe, calm, and ready for sleep. You are honest, not generous.
 
-1. Age Appropriateness  — Is the vocabulary and complexity right for ages 5-10?
-2. Emotional Safety     — Does it avoid fear, anxiety, or overstimulation?
-3. Story Coherence      — Does it have a clear beginning, middle, and peaceful end?
-4. Bedtime Calmness     — Will this help a child relax and fall asleep?
-5. Moral Clarity        — Is there a gentle, age-appropriate life lesson present?
+WHAT TO EVALUATE:
+Read the story carefully and assess it across these 5 dimensions.
+Use your genuine expert judgment — do not inflate scores:
 
-SCORING RULES:
-- Overall Score = average of all 5 dimension scores (rounded to 1 decimal)
-- PASS          = Overall Score >= 7.0
-- FAIL          = Overall Score < 7.0
+1. Age Appropriateness
+   Ask yourself: Would a 6-year-old understand every word and concept here?
+   Are the sentences simple enough? Is the world of the story easy to imagine?
 
-IMPORTANT:
-- Be honest and specific. Vague feedback does not help the revision agent.
-- If the story fails, your improvement_suggestions must be actionable and concrete.
-- Return ONLY a valid JSON object. No explanation, no extra text, no markdown.
+2. Emotional Safety
+   Ask yourself: Does anything in this story cause worry, fear, or anxiety?
+   Would a sensitive child feel unsettled at any point?
+   Does the story resolve all tension before it ends?
 
-Return exactly this JSON structure:
+3. Story Coherence
+   Ask yourself: Does the story flow naturally from beginning to middle to end?
+   Does it feel complete — like nothing is missing or rushed?
+
+4. Bedtime Calmness
+   Ask yourself: After hearing this story, would a child feel MORE or LESS sleepy?
+   Does the energy of the story decrease toward the end?
+   Is the final image peaceful and restful?
+
+5. Moral Clarity
+   Ask yourself: Is there a gentle life lesson here that a child would naturally
+   feel — not just hear? Does the moral emerge from what characters DO,
+   rather than being directly stated to the reader?
+
+HOW TO SCORE:
+- Score each dimension 1-10 based on your honest assessment
+- Be specific in your reasoning — vague scores help no one
+- A score of 9 or 10 means the story genuinely excels in that area
+- A score of 7-8 means it's solid but has room to improve
+- A score below 7 means there is a real problem worth fixing
+- Overall Score = average of all 5 scores (rounded to 1 decimal)
+- PASS = Overall Score >= 7.5
+- FAIL = Overall Score < 7.5
+
+HOW TO GIVE FEEDBACK (this is critical):
+Your feedback goes directly to a revision agent that will rewrite the story.
+Vague feedback produces vague revisions. Be precise:
+- Quote the specific sentence or moment that is the problem
+- Explain exactly WHY it is a problem for a child at bedtime
+- Suggest a concrete direction for fixing it
+
+Return ONLY a valid JSON object. No explanation, no extra text, no markdown:
 {{
   "scores": {{
-    "age_appropriateness": <int>,
-    "emotional_safety": <int>,
-    "story_coherence": <int>,
-    "bedtime_calmness": <int>,
-    "moral_clarity": <int>
+    "age_appropriateness": <int 1-10>,
+    "emotional_safety": <int 1-10>,
+    "story_coherence": <int 1-10>,
+    "bedtime_calmness": <int 1-10>,
+    "moral_clarity": <int 1-10>
   }},
   "overall_score": <float>,
   "verdict": "PASS" or "FAIL",
-  "weaknesses": "<specific weaknesses as a short paragraph>",
-  "improvement_suggestions": "<concrete, actionable suggestions for the revision agent>"
+  "weaknesses": "<specific moments or sentences that are problematic — quote them>",
+  "improvement_suggestions": "<concrete directions for the revision agent>"
 }}
 
 Story to evaluate:
@@ -233,30 +275,62 @@ Story:
 # 6. NARRATOR VOICE MAP
 # ============================================================
 # Purpose: Map story tone/genre to the most fitting OpenAI TTS voice.
-# This is a product design decision — not just plugging in TTS.
-# Each voice is chosen intentionally for its bedtime feel.
+# This is a deliberate product design decision — every voice is chosen
+# specifically for how it sounds to a child at bedtime, not just
+# what sounds "appropriate" for the genre in general.
 #
-# Available OpenAI TTS voices:
-#   alloy    — neutral, clear, professional
-#   echo     — smooth, calm, measured
-#   fable    — warm, storytelling, expressive  ← best for most bedtime stories
-#   onyx     — deep, authoritative, dramatic
-#   nova     — bright, warm, friendly
-#   shimmer  — soft, gentle, soothing          ← best for very calm stories
+# Key design principle:
+#   This is a BEDTIME system for children ages 5-10.
+#   No voice should ever sound authoritative, dramatic, or male-presenter.
+#   Every voice must feel warm, soft, and parent-like.
+#   onyx is explicitly excluded — too deep and memo-like for children.
+#
+# Available OpenAI TTS voices (bedtime suitability ranked):
+#   shimmer  — soft, gentle, soothing       ← best for bedtime (9/10)
+#   fable    — warm, expressive, narrative  ← best storytelling voice (8/10)
+#   nova     — bright, warm, friendly       ← playful but calm (7/10)
+#   alloy    — neutral, clear               ← acceptable fallback (6/10)
+#   echo     — smooth, measured             ← too flat for children (5/10)
+#   onyx     — deep, authoritative          ← NEVER use for bedtime (2/10)
 # ============================================================
 
 NARRATOR_VOICE_MAP = {
-    "adventure"   : "onyx",      # Deep and dramatic — brings the journey to life
-    "fantasy"     : "fable",     # Warm and expressive — magical worlds feel real
-    "friendship"  : "nova",      # Bright and friendly — feels like a caring voice
+    "adventure"   : "fable",     # Warm narrative — keeps adventure calm not dramatic
+    "fantasy"     : "fable",     # Expressive and magical — perfect for fantasy worlds
+    "friendship"  : "nova",      # Bright and caring — feels like a kind friend
     "nature"      : "shimmer",   # Soft and gentle — mirrors the calm of nature
-    "animals"     : "fable",     # Playful and warm — perfect for animal tales
-    "magic"       : "fable",     # Expressive — makes magic feel wondrous
-    "default"     : "shimmer",   # Fallback — always safe, soft, and soothing
+    "animals"     : "nova",      # Playful warmth — brings animal characters to life
+    "magic"       : "shimmer",   # Dreamy and soft — makes magic feel wonder-filled
+    "default"     : "shimmer",   # Always safe — soft, soothing, sleep-inducing
 }
 
+# ============================================================
+# 7. NARRATOR TTS INSTRUCTION PROMPT
+# ============================================================
+# Purpose: Guide HOW the TTS model delivers the story — not just what
+# it says. This is prompt engineering applied to the audio layer.
+# A well-crafted instruction makes the same voice sound dramatically
+# different — slower, warmer, more like a real bedtime storyteller.
+#
+# Design decisions:
+#   - Explicit pacing instruction: "speak slowly" + "pause between sentences"
+#   - Emotional framing: "sitting beside a child's bed"
+#   - Ending instruction: "let your voice become quieter toward the end"
+#     This mirrors how real parents naturally lower their voice as a child
+#     drifts toward sleep — a deliberate product UX decision.
+# ============================================================
+
 NARRATOR_TTS_INSTRUCTION = """
-Speak slowly, warmly, and gently — as if you are sitting beside a child's bed
-telling them a bedtime story in the soft glow of a nightlight.
-Pause briefly between sentences. Keep your voice calm and unhurried throughout.
+You are a warm, gentle bedtime storyteller reading to a child aged 5 to 10.
+
+Delivery instructions:
+- Speak slowly and softly throughout — unhurried, like a lullaby
+- Pause gently between each sentence — give the child time to imagine
+- Use a warm, loving tone — like a parent sitting beside a nightlight
+- Let your voice become slightly quieter and softer toward the end
+- Never rush — the goal is to help the child feel sleepy and safe
+- Emphasize warm, cozy words like "soft", "gentle", "warm", "safe"
+
+This is a sacred bedtime moment. Your voice is the last thing
+this child hears before drifting off to sleep. Make it count.
 """
