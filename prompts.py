@@ -52,14 +52,14 @@ RULES:
 - If the request is unclear, make a warm, reasonable assumption.
 
 Return exactly this JSON structure:
-{
+{{
   "genre": "...",
   "tone": "...",
   "bedtime_suitability": "LOW | MEDIUM | HIGH",
   "moral": "...",
   "pacing": "SLOW | MEDIUM",
   "main_character": "..."
-}
+}}
 
 User Request:
 {user_input}
