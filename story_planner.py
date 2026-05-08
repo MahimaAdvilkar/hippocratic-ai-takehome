@@ -24,7 +24,10 @@ Author: Mahima Advilkar
 import json
 import os
 import openai
+from dotenv import load_dotenv
 from prompts import STORY_PLANNER_PROMPT
+
+load_dotenv()
 
 
 def plan_story(client: openai.OpenAI, user_input: str, model: str = None) -> dict:
