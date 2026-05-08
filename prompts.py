@@ -82,7 +82,7 @@ deeply calming — stories that help children feel cozy, loved, and ready for sl
 Use the story plan below to write a complete original bedtime story.
 
 STRICT REQUIREMENTS:
-- Length        : 200 to 300 words — short, focused, and dreamy
+- Length        : Story text (under `Story:`) must be 200 to 300 words — short, focused, and dreamy
 - Structure     : Clear beginning (setup) → middle (gentle challenge) → ending (peaceful resolution)
 - Language      : Simple, warm, and descriptive — no complex vocabulary
 - Tone          : Comforting and imaginative — never scary, tense, or overstimulating
@@ -99,7 +99,11 @@ Story Plan:
 User Request:
 {user_input}
 
-Now write the full bedtime story. Begin directly with the story — no title, no preamble:
+Return exactly this format (do not add anything else):
+Title: <a short, friendly title>
+Story:
+<your story text only — 200 to 300 words>
+Moral: <one sentence moral / life lesson>
 """
 
 
@@ -215,7 +219,7 @@ Your job is to rewrite the story using the judge's specific feedback.
 
 RULES:
 - Keep the same main characters and core story idea — do NOT start over
-- Match the same length: 200 to 300 words
+- Match the same story length: 200 to 300 words (in the `Story:` section)
 - Directly address the specific weaknesses listed below
 - The revised story must feel calming, safe, and sleep-friendly
 - Do not introduce new conflicts or excitement — resolve gently
@@ -229,7 +233,11 @@ Judge Verdict       : FAIL
 Specific Weaknesses : {weaknesses}
 Improvement Actions : {suggestions}
 
-Now write the improved bedtime story. Begin directly with the story — no preamble:
+Now rewrite the story in the exact same format:
+Title: <same or improved title>
+Story:
+<your revised story text only — 200 to 300 words>
+Moral: <one sentence moral / life lesson>
 """
 
 
@@ -272,7 +280,40 @@ Story:
 
 
 # ============================================================
-# 6. NARRATOR VOICE MAP
+# 6. TITLE + MORAL PROMPT
+# ============================================================
+# Purpose: Add a polished presentation layer after the best story has
+# been selected. This keeps title/moral generation separate from the
+# core story loop so the judge evaluates only the story itself.
+# Output: JSON (parsed by story_generator.py)
+# ============================================================
+
+TITLE_MORAL_PROMPT = """
+You are a children's book editor for DreamWeaver AI.
+
+Read the bedtime story and create:
+1. A short, friendly, magical title
+2. A one-sentence moral that feels gentle and age-appropriate
+
+Rules:
+- Return ONLY a valid JSON object. No markdown, no explanation.
+- Keep the title under 8 words.
+- Keep the moral warm, simple, and suitable for children ages 5 to 10.
+- Do not add scary, dramatic, or overstimulating language.
+
+Return exactly this JSON structure:
+{{
+  "title": "...",
+  "moral": "..."
+}}
+
+Story:
+{story}
+"""
+
+
+# ============================================================
+# 7. NARRATOR VOICE MAP
 # ============================================================
 # Purpose: Map story tone/genre to the most fitting OpenAI TTS voice.
 # This is a deliberate product design decision — every voice is chosen
@@ -305,7 +346,7 @@ NARRATOR_VOICE_MAP = {
 }
 
 # ============================================================
-# 7. NARRATOR TTS INSTRUCTION PROMPT
+# 8. NARRATOR TTS INSTRUCTION PROMPT
 # ============================================================
 # Purpose: Guide HOW the TTS model delivers the story — not just what
 # it says. This is prompt engineering applied to the audio layer.
