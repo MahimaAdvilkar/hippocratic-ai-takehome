@@ -52,9 +52,9 @@ def get_voice_for_genre(genre: str) -> str:
 
     Voice personality map:
         shimmer — soft, gentle, soothing      (nature, default)
-        fable   — warm, expressive, narrative  (fantasy, animals, magic)
-        nova    — bright, warm, friendly       (friendship)
-        onyx    — deep, calm, authoritative    (adventure)
+        fable   — warm, expressive, narrative  (fantasy, adventure, magic)
+        nova    — bright, warm, friendly       (friendship, animals)
+        onyx    — NEVER used — too deep for children
 
     Args:
         genre : Story genre string from the story planner
@@ -110,9 +110,10 @@ def narrate_story(
 
     # Call OpenAI TTS API
     response = client.audio.speech.create(
-        model=TTS_MODEL,
+        model="tts-1-hd",
         voice=voice,
         input=narration_input,
+        speed=0.85,
     )
 
     # Save audio to file
