@@ -23,8 +23,11 @@ Author: Mahima Advilkar
 
 import os
 import openai
+from dotenv import load_dotenv
 from prompts import STORY_GENERATOR_PROMPT
 from story_planner import format_plan_for_prompt
+
+load_dotenv()
 
 
 def generate_story(
@@ -179,3 +182,57 @@ def display_story(story: str, attempt: int = 1) -> None:
     print(f"{'='*50}")
     print(f"\n{story}\n")
     print(f"{'='*50}\n")
+
+
+def generate_title_and_moral(
+    client: openai.OpenAI,
+    story: str,
+    model: str = None
+) -> dict:
+    """
+    Generate a magical title and moral for the approved bedtime story.
+
+    Runs as a lightweight final pass after the judge approves the story.
+    Returns a dict with 'title' and 'moral' keys.
+
+    Args:
+        client  : Initialized OpenAI client
+        story   : The approved bedtime story text
+        model   : Model to use (default: STORY_MODEL env var)
+
+    Returns:
+        dict: {"title": "...", "moral": "..."}
+    """
+    from prompts import TITLE_MORAL_PROMPT
+    import json
+
+    if model is None:
+        model = os.getenv("STORY_MODEL", "gpt-3.5-turbo")
+
+    formatted = TITLE_MORAL_PROMPT.format(story=story)
+
+    response = client.chat.completions.create(
+        model=model,
+        messages=[
+            {"role": "system", "content": "You are a children's book title writer. Return only valid JSON."},
+            {"role": "user", "content": formatted}
+        ],
+        temperature=0.7,
+        max_tokens=100,
+    )
+
+    raw = response.choices[0].message.content.strip()
+    if raw.startswith("```"):
+        raw = raw.strip("`").strip()
+        if raw.startswith("json"):
+            raw = raw[4:].strip()
+
+    try:
+        result = json.loads(raw)
+    except Exception:
+        result = {
+            "title": "A Magical Bedtime Story",
+            "moral": "Kindness and courage make the world a better place."
+        }
+
+    return result
