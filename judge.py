@@ -34,6 +34,7 @@ import json
 import openai
 from dotenv import load_dotenv
 from prompts import JUDGE_PROMPT
+from story_format import extract_story_text
 
 load_dotenv()
 
@@ -79,6 +80,8 @@ def evaluate_story(
     if model is None:
         model = os.getenv("JUDGE_MODEL", "gpt-3.5-turbo")
 
+    story_text = extract_story_text(story)
+
     # ─── Step 1: Critique First ────────────────────────────────────────
     # Force the model to find problems BEFORE scoring.
     # This is a two-step evaluation pattern — asking the model to critique
@@ -109,7 +112,7 @@ def evaluate_story(
                     "- Direct address to the reader ('And so, dear child...')\n\n"
                     "List every problem you find. Be specific — quote the sentence.\n"
                     "If you find no problems, you are not looking hard enough.\n\n"
-                    f"Story:\n{story}"
+                    f"Story:\n{story_text}"
                 )
             }
         ],
@@ -122,7 +125,7 @@ def evaluate_story(
     # ─── Step 2: Score With Critique Context ──────────────────────────
     # Now score the story — but with the critique already surfaced.
     # This prevents the model from ignoring problems it has already named.
-    formatted_prompt = JUDGE_PROMPT.format(story=story)
+    formatted_prompt = JUDGE_PROMPT.format(story=story_text)
 
     # Call the judge — low temperature for consistent, reliable evaluation
     response = client.chat.completions.create(
