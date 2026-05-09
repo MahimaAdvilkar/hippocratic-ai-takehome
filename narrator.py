@@ -3,25 +3,16 @@ narrator.py
 ===========
 DreamWeaver AI — Voice Narration Layer
 
-This module is the SIXTH and final step in the pipeline.
-It converts the approved bedtime story into spoken audio using
-OpenAI's Text-to-Speech (TTS) API and plays it aloud.
-
-Why voice narration matters for Hippocratic AI:
-    Hippocratic AI's core product is a voice-based AI agent that
-    speaks directly to patients. Adding a voice layer here is not
-    just a feature — it demonstrates understanding of the company's
-    core technical stack and product vision.
+Converts the approved bedtime story into spoken audio using OpenAI TTS.
+Reads the story with a mood-matched voice, then whispers the moral
+at the end in a slower, softer tone — like a parent at bedtime.
 
 Design decisions:
-    - Voice is selected based on story genre (mood-matched)
-    - TTS instruction prompt guides pacing and warmth
-    - Audio saved as MP3 for portability
-    - Graceful fallback if audio playback fails
-    - User can opt out of narration entirely
-
-Input  : Approved story (str), story genre (str)
-Output : Spoken audio played aloud + saved as story_output.mp3
+    - Voice mood-matched to story genre
+    - Story at 0.85x speed — warm, unhurried
+    - Moral at 0.75x speed — contemplative whisper at the end
+    - 1.5s silence gap between story and moral
+    - Graceful fallback if any step fails
 
 Author: Mahima Advilkar
 """
@@ -29,224 +20,153 @@ Author: Mahima Advilkar
 import os
 import subprocess
 import platform
-from typing import Tuple
 from pathlib import Path
 from dotenv import load_dotenv
 import openai
 
 from prompts import NARRATOR_VOICE_MAP
-from config import TTS_MODEL, TTS_VOICE, STORY_MODEL
-from story_format import extract_story_text
+from config import TTS_MODEL, TTS_VOICE
 
 load_dotenv()
 
-# Output path for the generated audio file
-AUDIO_OUTPUT_PATH = Path("story_output.mp3")
+STORY_PATH  = Path("story_output.mp3")
+MORAL_PATH  = Path("moral_output.mp3")
+FINAL_PATH  = Path("story_final.mp3")
 
 
 def get_voice_for_genre(genre: str) -> str:
     """
     Select the most appropriate TTS voice based on story genre.
 
-    Each voice is intentionally matched to a genre for the best
-    bedtime experience — this is a product design decision, not
-    just a random voice selection.
-
-    Voice personality map:
-        shimmer — soft, gentle, soothing      (nature, default)
-        fable   — warm, expressive, narrative  (fantasy, animals, magic)
+    Voice map:
+        shimmer — soft, gentle, soothing       (nature, default, family)
+        fable   — warm, expressive, narrative  (fantasy, magic, animals)
         nova    — bright, warm, friendly       (friendship)
-        onyx    — deep, calm, authoritative    (adventure)
-
-    Args:
-        genre : Story genre string from the story planner
-
-    Returns:
-        str: OpenAI TTS voice name
     """
-    genre_normalized = genre.lower().strip()
-    voice = NARRATOR_VOICE_MAP.get(genre_normalized, NARRATOR_VOICE_MAP["default"])
-    return voice
+    return NARRATOR_VOICE_MAP.get(genre.lower().strip(), NARRATOR_VOICE_MAP["default"])
 
 
 def narrate_story(
     client: openai.OpenAI,
     story: str,
     genre: str = "default",
-    output_path: Path = AUDIO_OUTPUT_PATH,
-    autoplay: bool = True,
-    language: str = "English",
+    moral: str = "",
+    output_path: Path = STORY_PATH,
+    autoplay: bool = True
 ) -> Path:
     """
-    Convert the bedtime story to speech and optionally play it aloud.
+    Narrate the bedtime story with optional moral at the end.
 
-    Uses OpenAI's TTS API with a mood-matched voice and a carefully
-    crafted instruction prompt that guides the model to speak slowly,
-    warmly, and gently — as a real bedtime storyteller would.
+    Steps:
+        1. Generate story narration (mood-matched voice, 0.85x speed)
+        2. Generate moral narration if provided (0.75x speed, softer)
+        3. Combine into one MP3 using pydub
+        4. Play the final audio
 
     Args:
         client      : Initialized OpenAI client
         story       : The approved bedtime story text
         genre       : Story genre for voice selection
-        output_path : Path to save the MP3 file
-        autoplay    : Whether to auto-play the audio after generation
+        moral       : Story moral to whisper at the end (optional)
+        output_path : Path to save the story MP3
+        autoplay    : Whether to auto-play after generation
 
     Returns:
-        Path: Path to the saved MP3 file
-
-    Raises:
-        Exception: If TTS API call fails
+        Path: Path to the final audio file
     """
 
-    # Select voice based on genre
     voice = get_voice_for_genre(genre)
-    # Extract only the story body so we don't narrate headings like "Title:" / "Moral:".
-    story_text = extract_story_text(story)
-
-    narration_text, language_used = prepare_narration_text(
-        client=client,
-        story=story_text,
-        language=language
-    )
 
     print(f"\n{'='*50}")
     print(f"  VOICE NARRATION")
     print(f"{'='*50}")
-    print(f"  Voice selected : {voice} (matched to genre: {genre})")
-    print(f"  Narration lang : {language_used}")
-    print(f"  Generating audio... please wait...")
+    print(f"  Voice          : {voice} (matched to genre: {genre})")
+    print(f"  Generating story narration...")
 
-    # Important: we do NOT prepend any extra instruction text into TTS input,
-    # otherwise it gets spoken and can add long "prompt reading" before the story.
-    narration_input = narration_text
-
-    # Call OpenAI TTS API
-    # tts-1-hd produces warmer, more natural audio than tts-1
-    # Critical for a children's bedtime product — quality over speed
+    # Step 1: Generate story narration
     response = client.audio.speech.create(
-        model=TTS_MODEL,
+        model="tts-1-hd",
         voice=voice,
-        input=narration_input,
-        speed=0.85,   # Slightly slower than default — more soothing for bedtime
+        input=story,
+        speed=0.85,
     )
-
-    # Save audio to file
     response.stream_to_file(output_path)
 
-    print(f"  Audio saved    : {output_path}")
+    # Step 2: Generate moral narration if provided
+    if moral:
+        print(f"  Generating moral narration...")
+        moral_response = client.audio.speech.create(
+            model="tts-1-hd",
+            voice=voice,
+            input=f"... {moral} ...",
+            speed=0.75,    # Slower, more contemplative
+        )
+        moral_response.stream_to_file(MORAL_PATH)
 
-    # Auto-play the audio if requested
-    if autoplay:
-        _play_audio(output_path)
+        # Step 3: Combine story + moral using pydub
+        final_path = _combine_audio(output_path, MORAL_PATH)
+    else:
+        final_path = output_path
 
+    print(f"  Audio saved    : {final_path}")
     print(f"{'='*50}\n")
 
-    return output_path
+    # Step 4: Play
+    if autoplay:
+        _play_audio(final_path)
+
+    # Cleanup temp moral file
+    if MORAL_PATH.exists():
+        MORAL_PATH.unlink()
+
+    return final_path
 
 
-def prepare_narration_text(
-    client: openai.OpenAI,
-    story: str,
-    language: str = "English"
-) -> Tuple[str, str]:
+def _combine_audio(story_path: Path, moral_path: Path) -> Path:
     """
-    Return narration-ready text, translating story if needed.
-    """
-    normalized = (language or "English").strip().lower()
-    if normalized in {"english", "en"}:
-        return story, "English"
+    Combine story audio + silence gap + moral audio into one MP3.
 
-    translated = translate_story(client=client, story=story, target_language=language)
-    return translated, language
-
-
-def translate_story(client: openai.OpenAI, story: str, target_language: str) -> str:
+    Uses pydub with a 1.5-second silence gap between story and moral.
+    Falls back to story-only audio if pydub fails.
     """
-    Translate story text while preserving calm bedtime tone.
-    """
-    response = client.chat.completions.create(
-        model=STORY_MODEL,
-        temperature=0.2,
-        messages=[
-            {
-                "role": "system",
-                "content": (
-                    "You are a professional translator for children's bedtime stories. "
-                    "Translate the story into the target language while preserving warmth, "
-                    "simplicity, and calming tone. Return only the translated story text."
-                ),
-            },
-            {
-                "role": "user",
-                "content": (
-                    f"Target language: {target_language}\n\n"
-                    f"Story:\n{story}"
-                ),
-            },
-        ],
-        max_tokens=1200,
-    )
-    return response.choices[0].message.content.strip()
+    try:
+        from pydub import AudioSegment
+
+        story  = AudioSegment.from_mp3(str(story_path))
+        moral  = AudioSegment.from_mp3(str(moral_path))
+        gap    = AudioSegment.silent(duration=1500)   # 1.5s pause
+
+        final = story + gap + moral
+        final.export(str(FINAL_PATH), format="mp3")
+        return FINAL_PATH
+
+    except Exception as e:
+        print(f"  [Narrator] Could not combine audio: {e}")
+        return story_path
 
 
 def _play_audio(audio_path: Path) -> None:
-    """
-    Play the audio file using the system's default media player.
-
-    Uses platform-appropriate commands:
-        macOS   : afplay (built-in, no dependencies)
-        Linux   : aplay or mpg123
-        Windows : start (built-in)
-
-    Gracefully handles playback failures without crashing the pipeline.
-
-    Args:
-        audio_path : Path to the MP3 file to play
-    """
+    """Play audio using platform-appropriate method."""
     system = platform.system()
-
     try:
-        if system == "Darwin":      # macOS
+        if system == "Darwin":
             subprocess.run(["afplay", str(audio_path)], check=True)
-
         elif system == "Linux":
-            # Try mpg123 first, fall back to aplay
             try:
                 subprocess.run(["mpg123", str(audio_path)], check=True)
             except FileNotFoundError:
                 subprocess.run(["aplay", str(audio_path)], check=True)
-
         elif system == "Windows":
             os.startfile(str(audio_path))
-
         else:
-            print(f"  [Narrator] Auto-play not supported on {system}.")
             print(f"  Open {audio_path} manually to listen.")
-
     except Exception as e:
-        # Never crash the pipeline because audio playback failed
-        print(f"  [Narrator] Audio playback skipped: {e}")
-        print(f"  Your story audio is saved at: {audio_path}")
+        print(f"  [Narrator] Playback skipped: {e}")
+        print(f"  Your audio is saved at: {audio_path}")
 
 
 def prompt_for_narration() -> bool:
-    """
-    Ask the user if they want the story read aloud.
-
-    Returns:
-        bool: True if user wants narration, False otherwise
-    """
+    """Ask the user if they want the story read aloud."""
     print("\n🎙️  Would you like me to read this story aloud?")
     choice = input("  Enter (y/n): ").strip().lower()
     return choice in ("y", "yes")
-
-
-def prompt_for_narration_language() -> str:
-    """
-    Ask user which language to use for narration.
-    """
-    print("\n🌍  Narration language options:")
-    print("  1. English   2. Spanish   3. French   4. Hindi")
-    choice = input("  Choose (1-4, default 1): ").strip()
-    mapping = {"1": "English", "2": "Spanish", "3": "French", "4": "Hindi"}
-    return mapping.get(choice, "English")

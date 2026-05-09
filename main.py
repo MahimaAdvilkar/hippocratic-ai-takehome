@@ -155,6 +155,7 @@ def main():
             client=client,
             story=final_story,
             genre=genre,
+            moral=title_moral.get("moral", ""),
             autoplay=True
         )
         print("  🌙  Sweet dreams! Goodnight.")
